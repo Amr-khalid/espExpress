@@ -1,8 +1,12 @@
 {
+  "name": "espExpress",
+  "version": "1.0.0",
   "type": "commonjs",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
-    "dev2": "nodemon src/two.ts"
+    "build": "tsc",
+    "start": "node dist/index.js"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
