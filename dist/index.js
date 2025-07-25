@@ -11,17 +11,23 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const twilio_1 = __importDefault(require("twilio"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "mySecretKey"; // ضعها في .env
-const url = process.env.MONGO_URL || "mongodb://localhost:27017/users"; // استخدم MONGO_URL من .env أو افتراضي
+const JWT_SECRET = process.env.JWT_SECRET || "mySecretKey";
+const url = process.env.MONGO_URL || "mongodb://localhost:27017/users";
+// ✅ الاتصال بقاعدة البيانات
 mongoose_1.default
     .connect(url)
     .then(() => console.log("✅ Connected to DB"))
     .catch((err) => console.error("❌ DB Connection Error:", err));
 app.use(express_1.default.json());
 app.use((0, cors_1.default)());
+// ✅ Route رئيسي للتأكد من عمل السيرفر
+app.get("/", (_, res) => {
+    res.send("✅ Server is running successfully!");
+});
 // ✅ إحضار كل البيانات
 app.get("/all", async (req, res) => {
     try {
@@ -52,31 +58,24 @@ app.get("/:id", async (req, res) => {
 app.post("/register", async (req, res) => {
     try {
         const { username, email, password, address, phone, temp } = req.body;
-        // تحقق إذا كان المستخدم موجود مسبقاً
         const existingUser = await schema_1.schema.findOne({ email });
         if (existingUser) {
             return res
                 .status(400)
                 .json({ success: false, message: "User already exists" });
         }
-        // تشفير كلمة السر
         const hashedPassword = await bcrypt_1.default.hash(password, 10);
-        // حفظ البيانات في قاعدة البيانات
         const newUser = new schema_1.schema({
             username,
             email,
             password: hashedPassword,
             address,
             phone,
-            temp
+            temp,
         });
         await newUser.save();
-        // إنشاء توكن JWT
         const token = jsonwebtoken_1.default.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, {
             expiresIn: "7d",
-        });
-        app.get("/", (_, res) => {
-            res.send("Server is running ✅");
         });
         return res.status(201).json({
             success: true,
@@ -88,7 +87,7 @@ app.post("/register", async (req, res) => {
                 email: newUser.email,
                 address: newUser.address,
                 phone: newUser.phone,
-                temp: newUser.temp
+                temp: newUser.temp,
             },
         });
     }
@@ -97,16 +96,17 @@ app.post("/register", async (req, res) => {
         return res.status(500).json({ success: false, message: "Server Error" });
     }
 });
+// ✅ تسجيل دخول
 app.post("/login", async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
         return res.status(400).json({ success: false, message: "Bad Request" });
     }
-    const findUser = await schema_1.schema.findOne({ email: req.body.email });
+    const findUser = await schema_1.schema.findOne({ email });
     if (!findUser) {
         return res.status(404).json({ success: false, message: "User Not Found" });
     }
-    const isMatch = bcrypt_1.default.compare(password, findUser.password);
+    const isMatch = await bcrypt_1.default.compare(password, findUser.password);
     if (!isMatch) {
         return res.status(401).json({ success: false, message: "Unauthorized" });
     }
@@ -117,43 +117,37 @@ app.post("/login", async (req, res) => {
         .status(200)
         .json({ success: true, token, id: findUser._id, email: findUser.email });
 });
+// ✅ تحديث بيانات
 app.patch("/update/:id", async (req, res) => {
     try {
         const _id = req.params.id;
-        const data = await schema_1.schema.findByIdAndUpdate(_id, req.body);
+        const data = await schema_1.schema.findByIdAndUpdate(_id, req.body, { new: true });
         return res.status(200).json({ success: true, data });
     }
     catch (error) {
         return res.status(500).json({ success: false, message: "Server Error" });
     }
 });
-//Email
-// لا تضع كلمة المرور مباشرة في الكود (استخدم .env)
+// ✅ إرسال إيميل
 let transporter = nodemailer_1.default.createTransport({
     service: "gmail",
     auth: {
-        user: process.env.EMAIL_USER, // "sensosafee@gmail.com"
-        pass: process.env.EMAIL_PASS, // كلمة مرور التطبيق (وليس كلمة مرور الإيميل العادية)
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
     },
 });
 app.post("/email", async (req, res) => {
     try {
         const { email, phone, address, username } = req.body;
-        // تحقق من وجود المستخدم
         const mailOptions = {
             from: `"SensoSafe" <${process.env.EMAIL_USER}>`,
-            to: "ak7055864@gmail.com", // البريد الذي سترسل له البلاغ
+            to: "ak7055864@gmail.com",
             subject: "بلاغ عاجل: تسرب غاز",
-            text: `يوجد تسرب غاز في الموقع التالي:
-العنوان:${address}]
-رقم الهاتف للتواصل:${phone}يرجى سرعة التدخل حفاظًا على السلامة العامة.`,
             html: `
-    <h2 style="color:red;">🚨 بلاغ عاجل: تسرب غاز</h2>
-    <p>يوجد تسرب غاز في الموقع التالي:</p>
-    <p><b>العنوان:</b> ${address}</p>
-    <p><b>رقم الهاتف للتواصل:</b> ${phone}</p>
-    <p style="color:red;"><b>يرجى سرعة التدخل حفاظًا على السلامة العامة.</b></p>
-  `,
+        <h2 style="color:red;">🚨 بلاغ عاجل: تسرب غاز</h2>
+        <p><b>العنوان:</b> ${address}</p>
+        <p><b>رقم الهاتف للتواصل:</b> ${phone}</p>
+      `,
         };
         await transporter.sendMail(mailOptions);
         return res
@@ -165,12 +159,11 @@ app.post("/email", async (req, res) => {
         return res.status(500).json({ success: false, message: "Server Error" });
     }
 });
-const twilio = require("twilio");
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-// API لطلب الاتصال
+// ✅ Twilio اتصال
+const client = (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 app.post("/call", async (req, res) => {
     try {
-        const { phone } = req.body; // رقم الهاتف بصيغة دولية مثل +2010XXXXXXXX
+        const { phone } = req.body;
         const call = await client.calls.create({
             url: "http://demo.twilio.com/docs/voice.xml",
             to: phone,
