@@ -85,7 +85,9 @@ app.post("/register", async (req, res) => {
         expiresIn: "7d",
       }
     );
-
+app.get("/", (_, res) => {
+  res.send("Server is running ✅");
+});
     return res.status(201).json({
       success: true,
       message: "User registered successfully",

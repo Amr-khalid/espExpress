@@ -75,6 +75,9 @@ app.post("/register", async (req, res) => {
         const token = jsonwebtoken_1.default.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, {
             expiresIn: "7d",
         });
+        app.get("/", (_, res) => {
+            res.send("Server is running ✅");
+        });
         return res.status(201).json({
             success: true,
             message: "User registered successfully",
